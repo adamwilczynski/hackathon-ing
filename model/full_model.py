@@ -22,9 +22,10 @@ def get_model_prediction(text, model, tokenizer):
             )
         )
     )
-
     prediction = list(model.predict(text_representation)[0])
     column = prediction.index(max(prediction))
+
+    print(model.predict(text_representation)[0], column)
     return column
 
 
@@ -40,26 +41,13 @@ identifier.set_languages(['pl', 'en'])
 
 test_df["lang"] = test_df["text"].apply(lambda text: identifier.classify(str(text))[0])
 
-from contextlib import contextmanager
-import sys, os
+pl_filter = test_df["lang"] == "pl"
+test_df.loc[pl_filter, "predict"] = test_df.loc[pl_filter, "text"].apply(get_model_prediction,
+                                                                         args=[model_pl, tokenizer_pl])
 
-
-@contextmanager
-def suppress_stdout():
-    with open(os.devnull, "w") as devnull:
-        old_stdout = sys.stdout
-        sys.stdout = devnull
-        try:
-            yield
-        finally:
-            sys.stdout = old_stdout
-
-
-with suppress_stdout():
-    pl_filter = test_df["lang"] == "pl"
-    test_df.loc[pl_filter, "predict"] = test_df.loc[pl_filter, "text"].apply(get_model_prediction, args=[model_pl, tokenizer_pl])
-
-    eng_filter = test_df["lang"] == "eng"
-    test_df.loc[eng_filter, "predict"] = test_df.loc[eng_filter, "text"].apply(get_model_prediction, args=[model_eng, tokenizer_eng])
+eng_filter = test_df["lang"] == "en"
+test_df.loc[eng_filter, "predict"] = test_df.loc[eng_filter, "text"].apply(get_model_prediction,
+                                                                           args=[model_eng, tokenizer_eng])
+print(test_df.head())
 
 test_df.to_csv("test_model_after_predictions.csv")
