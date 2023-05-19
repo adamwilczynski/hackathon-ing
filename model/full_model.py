@@ -1,32 +1,65 @@
 import pickle
 
+import tensorflow as tf
+
 import pandas as pd
+import numpy as np
 from py3langid.langid import LanguageIdentifier, MODEL_FILE
 from langdetect import detect, detect_langs
 
-
-def get_model_prediction(text):
-    pass
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 
-if __name__ == "__main__":
-    model_and_reader_eng = pickle.load(open('model_eng.pkl', 'rb'))
-    # model_eng, model_reader_eng = model_and_reader_eng[0], model_and_reader_eng[1]
-    # print(type(model_eng), model_eng)
+def pad(sequences):
+    return pad_sequences(sequences, maxlen=400, padding='post', truncating='post')
 
-    model_and_reader_pl = pickle.load(open("model_pl.pkl", 'rb'))
-    # model_pl, model_reader_pl = model_and_reader_pl[0], model_and_reader_pl[1]
 
-    test_df = pd.read_csv("train_input_data_pl_and_eng.csv")
-    identifier = LanguageIdentifier.from_pickled_model(MODEL_FILE)
-    identifier.set_languages(['pl', 'en'])
+def get_model_prediction(text, model, tokenizer):
+    text_representation = np.array(
+        pad(
+            tokenizer.texts_to_sequences(
+                [str(text)]
+            )
+        )
+    )
 
-    test_df["lang"] = test_df["text"].apply(lambda text: identifier.classify(str(text))[0])
+    prediction = list(model.predict(text_representation)[0])
+    column = prediction.index(max(prediction))
+    return column
 
+
+model_eng = tf.keras.models.load_model('model_eng')
+tokenizer_eng = pickle.load(open('tokenizer_eng.pkl', 'rb'))
+
+model_pl = tf.keras.models.load_model('model_pl')
+tokenizer_pl = pickle.load(open('tokenizer_pl.pkl', 'rb'))
+
+test_df = pd.read_csv("train_input_data_pl_and_eng.csv").sample(500)
+identifier = LanguageIdentifier.from_pickled_model(MODEL_FILE)
+identifier.set_languages(['pl', 'en'])
+
+test_df["lang"] = test_df["text"].apply(lambda text: identifier.classify(str(text))[0])
+
+from contextlib import contextmanager
+import sys, os
+
+
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+
+
+with suppress_stdout():
     pl_filter = test_df["lang"] == "pl"
-    test_df.loc[pl_filter, "predict"] = test_df["text"].apply(model_and_reader_pl)
+    test_df.loc[pl_filter, "predict"] = test_df.loc[pl_filter, "text"].apply(get_model_prediction, args=[model_pl, tokenizer_pl])
 
     eng_filter = test_df["lang"] == "eng"
-    test_df.loc[eng_filter, "predict"] = test_df["text"].apply(model_and_reader_eng)
+    test_df.loc[eng_filter, "predict"] = test_df.loc[eng_filter, "text"].apply(get_model_prediction, args=[model_eng, tokenizer_eng])
 
-    test_df.to_csv("test_model_after_predictions.csv")
+test_df.to_csv("test_model_after_predictions.csv")
