@@ -1,3 +1,4 @@
+import json
 import pickle
 
 import tensorflow as tf
@@ -8,6 +9,20 @@ from py3langid.langid import LanguageIdentifier, MODEL_FILE
 from langdetect import detect, detect_langs
 
 from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+
+def read_json(filename):
+    with open(filename, encoding="UTF-8") as f:
+        return list(json.load(f).items())
+
+
+def get_filename_hash(filename):
+    return filename[filename.rindex("/") + 1:] if "/" in filename else filename
+
+
+testing_output_df = pd.DataFrame(read_json("output_data/test_ocr_clean.json"), columns="filename text".split())
+testing_output_df["filename"] = testing_output_df["filename"].apply(get_filename_hash)
+print(testing_output_df.head())
 
 
 def pad(sequences):
@@ -35,19 +50,22 @@ tokenizer_eng = pickle.load(open('tokenizer_eng.pkl', 'rb'))
 model_pl = tf.keras.models.load_model('model_pl')
 tokenizer_pl = pickle.load(open('tokenizer_pl.pkl', 'rb'))
 
-test_df = pd.read_csv("train_input_data_pl_and_eng.csv").sample(500)
 identifier = LanguageIdentifier.from_pickled_model(MODEL_FILE)
 identifier.set_languages(['pl', 'en'])
 
-test_df["lang"] = test_df["text"].apply(lambda text: identifier.classify(str(text))[0])
+testing_output_df["lang"] = testing_output_df["text"].apply(lambda text: identifier.classify(str(text))[0])
 
-pl_filter = test_df["lang"] == "pl"
-test_df.loc[pl_filter, "predict"] = test_df.loc[pl_filter, "text"].apply(get_model_prediction,
-                                                                         args=[model_pl, tokenizer_pl])
+pl_filter = testing_output_df["lang"] == "pl"
+testing_output_df.loc[pl_filter, "predict"] = testing_output_df.loc[pl_filter, "text"].apply(get_model_prediction,
+                                                                                             args=[model_pl,
+                                                                                                     tokenizer_pl])
 
-eng_filter = test_df["lang"] == "en"
-test_df.loc[eng_filter, "predict"] = test_df.loc[eng_filter, "text"].apply(get_model_prediction,
-                                                                           args=[model_eng, tokenizer_eng])
-print(test_df.head())
+eng_filter = testing_output_df["lang"] == "en"
+testing_output_df.loc[eng_filter, "predict"] = testing_output_df.loc[eng_filter, "text"].apply(get_model_prediction,
+                                                                                               args=[model_eng,
+                                                                                                       tokenizer_eng])
+print(testing_output_df.head())
 
-test_df.to_csv("test_model_after_predictions.csv")
+testing_output_df["predict"] = testing_output_df["predict"].astype(int)
+testing_output_df = testing_output_df.sort_values(by="filename")
+testing_output_df["filename predict".split()].to_csv("Gryfki_test_ids_final.csv", index=False)
